@@ -1,154 +1,162 @@
-name: RDP via Tailscale - Optimized
+name: Ubuntu RDP via Tailscale
 
 on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
-    runs-on: windows-latest
+  ubuntu-rdp:
+    runs-on: ubuntu-22.04
     timeout-minutes: 3600
 
     steps:
-      - name: Configure Core RDP Settings
+      - name: Install XFCE and XRDP
         run: |
-          # Enable Remote Desktop
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-                           -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "SecurityLayer" -Value 0 -Force
+          # Mettre à jour le système
+          sudo apt-get update
+          sudo apt-get upgrade -y
 
-          # Configure firewall
-          netsh advfirewall firewall delete rule name="RDP-Tailscale"
-          netsh advfirewall firewall add rule name="RDP-Tailscale" `
-            dir=in action=allow protocol=TCP localport=3389
+          # Installer XFCE (léger et performant)
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4 xfce4-goodies xorg dbus-x11
 
-          Restart-Service -Name TermService -Force
+          # Installer XRDP
+          sudo apt-get install -y xrdp
 
-      - name: Optimize RDP Performance
+          # Configurer XRDP pour utiliser XFCE
+          echo "xfce4-session" > ~/.xsession
+          sudo cp ~/.xsession /etc/skel/
+
+          # Redémarrer XRDP
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
+
+          # Ouvrir le port RDP
+          sudo ufw allow 3389
+
+      - name: Install Essential Tools
         run: |
-          # Optimisations pour réduire le lag et les glitches
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "MaxMonitors" -Value 4
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "MaxXResolution" -Value 1920
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "MaxYResolution" -Value 1080
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "ColorDepth" -Value 32
+          # Outils essentiels
+          sudo apt-get install -y \
+            firefox \
+            filezilla \
+            gedit \
+            vim \
+            htop \
+            curl \
+            wget \
+            git \
+            nano \
+            fonts-noto \
+            fonts-liberation
 
+          # Nettoyer le cache
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+
+      - name: Optimize Desktop Performance
+        run: |
           # Désactiver les effets visuels pour améliorer les performances
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
-                           -Name "fDisableWallpaper" -Value 1
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
-                           -Name "fDisableFullWindowDrag" -Value 1
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
-                           -Name "fDisableMenuAnims" -Value 1
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
-                           -Name "fDisableCursorSetting" -Value 0
+          mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml
+          cat > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfwm4" version="1.0">
+            <property name="general" type="empty">
+              <property name="theme" type="string" value="Default"/>
+              <property name="title_alignment" type="string" value="center"/>
+              <property name="box_move" type="bool" value="true"/>
+              <property name="box_resize" type="bool" value="true"/>
+              <property name="snap_to_border" type="bool" value="true"/>
+              <property name="snap_to_windows" type="bool" value="true"/>
+              <property name="wrap_windows" type="bool" value="false"/>
+              <property name="wrap_workspaces" type="bool" value="false"/>
+              <property name="shadow_delta_height" type="int" value="0"/>
+              <property name="shadow_delta_width" type="int" value="0"/>
+              <property name="shadow_delta_x" type="int" value="0"/>
+              <property name="shadow_delta_y" type="int" value="-3"/>
+              <property name="shadow_opacity" type="int" value="50"/>
+              <property name=" Compositor">
+                <property name="max_fps" type="uint" value="30"/>
+              </property>
+            </property>
+          </channel>
+          EOF
 
-          # Améliorer la réactivité de la souris
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "MouseCursorHook" -Value 1
+          # Configurer XFCE pour de meilleures performances
+          dbus-launch xfconf-query -c xfwm4 -p /general/use_compositing -s false
+          dbus-launch xfconf-query -c xfce4-session -p /general/SaveOnExit -s false
 
-          # Redémarrer les services
-          Restart-Service -Name "TermService" -Force
-          Restart-Service -Name "UmRdpService" -Force
-
-      - name: Create RDP User with Secure Password
+      - name: Create RDP User
         run: |
-          # Generate secure password
-          $charSet = @{
-              Upper   = [char[]](65..90)      # A-Z
-              Lower   = [char[]](97..122)     # a-z
-              Number  = [char[]](48..57)      # 0-9
-              Special = ([char[]](33..47) + [char[]](58..64) +
-                         [char[]](91..96) + [char[]](123..126)) # Special characters
-          }
-          $rawPassword = @()
-          $rawPassword += $charSet.Upper | Get-Random -Count 4
-          $rawPassword += $charSet.Lower | Get-Random -Count 4
-          $rawPassword += $charSet.Number | Get-Random -Count 4
-          $rawPassword += $charSet.Special | Get-Random -Count 4
-          $password = -join ($rawPassword | Sort-Object { Get-Random })
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          # Créer un utilisateur dédié pour RDP
+          sudo useradd -m -s /bin/bash ubuntuuser
+          echo "ubuntuuser:$(openssl rand -base64 16)" | sudo chpasswd
           
-          # Create user
-          New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
+          # Ajouter aux groupes nécessaires
+          sudo usermod -aG sudo ubuntuuser
+          sudo usermod -aG xrdp ubuntuuser
           
-          # Store credentials
-          echo "RDP_USER=RDPUser" >> $env:GITHUB_ENV
-          echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
+          # Configurer l'environnement pour l'utilisateur
+          sudo -u ubuntuuser mkdir -p /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml
+          sudo -u ubuntuuser cp ~/.xsession /home/ubuntuuser/
+          sudo -u ubuntuuser cp ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml/
+          sudo chown -R ubuntuuser:ubuntuuser /home/ubuntuuser
+
+          # Stocker les identifiants
+          echo "RDP_USER=ubuntuuser" >> $GITHUB_ENV
+          echo "RDP_PASSWORD=$(openssl rand -base64 16)" | sudo tee /tmp/password.txt
+          echo "RDP_PASSWORD=$(cat /tmp/password.txt)" >> $GITHUB_ENV
 
       - name: Install and Configure Tailscale
         run: |
-          # Download and install Tailscale
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", "`"$installerPath`"", "/quiet", "/norestart") -Wait -NoNewWindow
-          Remove-Item $installerPath -Force
-          
-          # Wait for installation to complete
-          Start-Sleep -Seconds 10
-          
-          # Connect to Tailscale
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-runner-$env:GITHUB_RUN_ID --accept-routes
+          # Installer Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Get Tailscale IP
+          # Démarrer Tailscale
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=ubuntu-gh-runner-${{ github.run_id }}
+
+          # Attendre l'IP Tailscale
+          sleep 10
+          TS_IP=$(sudo tailscale ip -4)
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+          echo "Tailscale IP: $TS_IP"
+
+      - name: Configure XRDP Security
         run: |
-          $retries = 0
-          $maxRetries = 10
-          $tsIP = $null
+          # Configurer XRDP pour accepter les connexions distantes
+          sudo sed -i 's/port=3389/port=3389\naddress=0.0.0.0/g' /etc/xrdp/xrdp.ini
           
-          while (-not $tsIP -and $retries -lt $maxRetries) {
-              Start-Sleep -Seconds 5
-              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-              $retries++
-              Write-Host "Attempt $retries : IP = $tsIP"
-          }
+          # Améliorer les performances XRDP
+          sudo sed -i 's/use_compression=yes/use_compression=no/g' /etc/xrdp/xrdp.ini
+          sudo sed -i 's/max_bpp=32/max_bpp=24/g' /etc/xrdp/xrdp.ini
           
-          if (-not $tsIP) {
-              Write-Error "Failed to get Tailscale IP"
-              exit 1
-          }
-          
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-          Write-Host "Tailscale IP: $tsIP"
+          # Redémarrer XRDP
+          sudo systemctl restart xrdp
 
       - name: Display Connection Information
         run: |
-          Write-Host "`n"
-          Write-Host "================================================"
-          Write-Host "🚀 RDP ACCESS READY - OPTIMIZED"
-          Write-Host "================================================"
-          Write-Host "IP Address: $env:TAILSCALE_IP"
-          Write-Host "Username: $env:RDP_USER"
-          Write-Host "Password: $env:RDP_PASSWORD"
-          Write-Host "================================================"
-          Write-Host "RECOMMENDED RDP CLIENT SETTINGS:"
-          Write-Host "- Experience: LAN (10 Mbps+)"
-          Write-Host "- Color depth: 32-bit"
-          Write-Host "- Display: 1280x720 or 1920x1080"
-          Write-Host "- Disable wallpaper and visual effects"
-          Write-Host "================================================"
-          Write-Host "`n"
+          echo ""
+          echo "================================================"
+          echo "🚀 UBUNTU RDP ACCESS READY - OPTIMIZED"
+          echo "================================================"
+          echo "IP Address: $TAILSCALE_IP"
+          echo "Username: $RDP_USER"
+          echo "Password: $RDP_PASSWORD"
+          echo "================================================"
+          echo "RECOMMENDED SETTINGS:"
+          echo "- Client: Microsoft Remote Desktop"
+          echo "- Resolution: 1280x720 or 1920x1080"
+          echo "- Color: 24-bit"
+          echo "- Experience: LAN (10 Mbps+)"
+          echo "================================================"
+          echo ""
 
-      - name: Keep RDP Session Active
+      - name: Keep Session Active
         run: |
-          Write-Host "✅ RDP Optimized Session Active"
-          Write-Host "Press 'Cancel' in GitHub to terminate"
+          echo "✅ Ubuntu RDP Session Active"
+          echo "Desktop: XFCE (Lightweight)"
+          echo "Press 'Cancel' in GitHub to terminate"
           
-          $counter = 0
-          while ($true) {
-              $counter++
-              $currentTime = Get-Date -Format "HH:mm:ss"
-              if ($counter % 10 -eq 0) {
-                  Write-Host "[$currentTime] Session active - $counter minutes"
-              }
-              Start-Sleep -Seconds 60
-          }
+          # Garder la session active
+          while true; do
+            echo "$(date): Session active - XRDP running on port 3389"
+            sleep 60
+          done
