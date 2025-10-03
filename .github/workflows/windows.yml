@@ -54,56 +54,44 @@ jobs:
 
       - name: Optimize Desktop Performance
         run: |
-          # Désactiver les effets visuels pour améliorer les performances
+          # Configurer XFCE pour de meilleures performances (méthode corrigée)
           mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml
-          cat > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xfwm4" version="1.0">
-            <property name="general" type="empty">
-              <property name="theme" type="string" value="Default"/>
-              <property name="title_alignment" type="string" value="center"/>
-              <property name="box_move" type="bool" value="true"/>
-              <property name="box_resize" type="bool" value="true"/>
-              <property name="snap_to_border" type="bool" value="true"/>
-              <property name="snap_to_windows" type="bool" value="true"/>
-              <property name="wrap_windows" type="bool" value="false"/>
-              <property name="wrap_workspaces" type="bool" value="false"/>
-              <property name="shadow_delta_height" type="int" value="0"/>
-              <property name="shadow_delta_width" type="int" value="0"/>
-              <property name="shadow_delta_x" type="int" value="0"/>
-              <property name="shadow_delta_y" type="int" value="-3"/>
-              <property name="shadow_opacity" type="int" value="50"/>
-              <property name=" Compositor">
-                <property name="max_fps" type="uint" value="30"/>
-              </property>
-            </property>
-          </channel>
-          EOF
-
-          # Configurer XFCE pour de meilleures performances
-          dbus-launch xfconf-query -c xfwm4 -p /general/use_compositing -s false
-          dbus-launch xfconf-query -c xfce4-session -p /general/SaveOnExit -s false
+          
+          # Créer le fichier de configuration XFWM4 avec --create
+          xfconf-query -c xfwm4 -p /general/use_compositing -s false --create -t bool
+          xfconf-query -c xfwm4 -p /general/theme -s "Default" --create -t string
+          
+          # Désactiver la sauvegarde de session
+          xfconf-query -c xfce4-session -p /general/SaveOnExit -s false --create -t bool
+          
+          # Configurer pour performances
+          xfconf-query -c xfwm4 -p /general/title_font -s "Sans 10" --create -t string
+          xfconf-query -c xfwm4 -p /general/title_alignment -s "center" --create -t string
 
       - name: Create RDP User
         run: |
           # Créer un utilisateur dédié pour RDP
           sudo useradd -m -s /bin/bash ubuntuuser
-          echo "ubuntuuser:$(openssl rand -base64 16)" | sudo chpasswd
+          PASSWORD=$(openssl rand -base64 16 | tr -d '/+' | cut -c1-16)
+          echo "ubuntuuser:$PASSWORD" | sudo chpasswd
           
           # Ajouter aux groupes nécessaires
           sudo usermod -aG sudo ubuntuuser
           sudo usermod -aG xrdp ubuntuuser
           
           # Configurer l'environnement pour l'utilisateur
-          sudo -u ubuntuuser mkdir -p /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml
-          sudo -u ubuntuuser cp ~/.xsession /home/ubuntuuser/
-          sudo -u ubuntuuser cp ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml/
+          sudo -u ubuntuuser mkdir -p /home/ubuntuuser/.config/xfce4
+          sudo -u ubuntuuser bash -c "echo 'xfce4-session' > /home/ubuntuuser/.xsession"
+          
+          # Appliquer les optimisations pour l'utilisateur
+          sudo -u ubuntuuser xfconf-query -c xfwm4 -p /general/use_compositing -s false --create -t bool
+          sudo -u ubuntuuser xfconf-query -c xfwm4 -p /general/theme -s "Default" --create -t string
+          
           sudo chown -R ubuntuuser:ubuntuuser /home/ubuntuuser
 
           # Stocker les identifiants
           echo "RDP_USER=ubuntuuser" >> $GITHUB_ENV
-          echo "RDP_PASSWORD=$(openssl rand -base64 16)" | sudo tee /tmp/password.txt
-          echo "RDP_PASSWORD=$(cat /tmp/password.txt)" >> $GITHUB_ENV
+          echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
 
       - name: Install and Configure Tailscale
         run: |
@@ -114,8 +102,13 @@ jobs:
           sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=ubuntu-gh-runner-${{ github.run_id }}
 
           # Attendre l'IP Tailscale
-          sleep 10
+          sleep 15
           TS_IP=$(sudo tailscale ip -4)
+          if [ -z "$TS_IP" ]; then
+            echo "Waiting for Tailscale IP..."
+            sleep 10
+            TS_IP=$(sudo tailscale ip -4)
+          fi
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
@@ -127,9 +120,18 @@ jobs:
           # Améliorer les performances XRDP
           sudo sed -i 's/use_compression=yes/use_compression=no/g' /etc/xrdp/xrdp.ini
           sudo sed -i 's/max_bpp=32/max_bpp=24/g' /etc/xrdp/xrdp.ini
+          sudo sed -i 's/bitmap_compression=true/bitmap_compression=false/g' /etc/xrdp/xrdp.ini
           
           # Redémarrer XRDP
           sudo systemctl restart xrdp
+          sudo systemctl status xrdp
+
+      - name: Additional Performance Tweaks
+        run: |
+          # Désactiver les services inutiles pour libérer des ressources
+          sudo systemctl disable bluetooth --now || true
+          sudo systemctl disable cups --now || true
+          sudo systemctl disable avahi-daemon --now || true
 
       - name: Display Connection Information
         run: |
@@ -141,22 +143,29 @@ jobs:
           echo "Username: $RDP_USER"
           echo "Password: $RDP_PASSWORD"
           echo "================================================"
-          echo "RECOMMENDED SETTINGS:"
-          echo "- Client: Microsoft Remote Desktop"
-          echo "- Resolution: 1280x720 or 1920x1080"
+          echo "DESKTOP: XFCE (Lightweight)"
+          echo "RECOMMENDED CLIENT SETTINGS:"
+          echo "- Resolution: 1280x720"
           echo "- Color: 24-bit"
           echo "- Experience: LAN (10 Mbps+)"
+          echo "- Disable wallpaper and animations"
           echo "================================================"
           echo ""
 
       - name: Keep Session Active
         run: |
           echo "✅ Ubuntu RDP Session Active"
-          echo "Desktop: XFCE (Lightweight)"
           echo "Press 'Cancel' in GitHub to terminate"
+          echo "XRDP is running on port 3389"
+          
+          # Vérifier que les services sont actifs
+          sudo systemctl status xrdp --no-pager
+          sudo tailscale status
           
           # Garder la session active
+          counter=0
           while true; do
-            echo "$(date): Session active - XRDP running on port 3389"
+            counter=$((counter + 1))
+            echo "$(date): Session active - $counter minutes elapsed"
             sleep 60
           done
