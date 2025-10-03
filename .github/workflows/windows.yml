@@ -129,8 +129,102 @@ jobs:
           sudo sed -i 's/bitmap_compression=true/bitmap_compression=false/g' /etc/xrdp/xrdp.ini
           
           # Ajouter l'adresse d'écoute si pas présente
-          sudo grep -q "address=0.0.0.0" /etc/xrdp/xrdp.ini || echo "address=0.0.0.0" | sudo tee -a /etc/xrdp/xrdp.ini
+          if ! sudo grep -q "address=0.0.0.0" /etc/xrdp/xrdp.ini; then
+            echo "address=0.0.0.0" | sudo tee -a /etc/xrdp/xrdp.ini
+          fi
 
-          # Redémarrer XRDP doucement
+          # Redémarrer XRDP
           sudo systemctl daemon-reload
-          sudo systemctl restart xrdp || (echo "XRDP restart failed, showing status:" && sudo systemctl status xrdp && exit 
+          sudo systemctl restart xrdp
+          
+          # Vérifier le statut
+          echo "XRDP status:"
+          sudo systemctl status xrdp --no-pager
+
+      - name: Additional Performance Tweaks
+        run: |
+          # Désactiver les services inutiles
+          sudo systemctl disable bluetooth --now || true
+          sudo systemctl disable cups --now || true
+          sudo systemctl disable avahi-daemon --now || true
+          
+          # Optimiser la mémoire
+          echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+          echo "vm.vfs_cache_pressure=50" | sudo tee -a /etc/sysctl.conf
+
+      - name: Display Connection Information
+        run: |
+          echo ""
+          echo "================================================"
+          echo "🚀 UBUNTU RDP ACCESS READY - OPTIMIZED"
+          echo "================================================"
+          echo "IP Address: $TAILSCALE_IP"
+          echo "Username: $RDP_USER"
+          echo "Password: $RDP_PASSWORD"
+          echo "================================================"
+          echo "DESKTOP: XFCE (Ultra Lightweight)"
+          echo "PERFORMANCE: Compositing disabled"
+          echo "RECOMMENDED CLIENT SETTINGS:"
+          echo "- Resolution: 1280x720"
+          echo "- Color: 24-bit"
+          echo "- Experience: LAN (10 Mbps+)"
+          echo "================================================"
+          echo ""
+
+      - name: Keep Session Active (Guaranteed)
+        run: |
+          echo "🔵 Starting RDP keep-alive session..."
+          echo "✅ All services are running"
+          echo "🖥️  RDP accessible at: $TAILSCALE_IP"
+          echo "👤 Username: $RDP_USER"
+          echo "🔑 Password: $RDP_PASSWORD"
+          echo ""
+          echo "📡 Services status:"
+          sudo systemctl is-active xrdp && echo "✅ XRDP: ACTIVE" || echo "❌ XRDP: INACTIVE"
+          sudo tailscale status && echo "✅ Tailscale: ACTIVE" || echo "❌ Tailscale: INACTIVE"
+          echo ""
+          echo "⏰ Session started at: $(date)"
+          echo "🔄 This session will remain active until manually cancelled"
+          echo "❌ To stop: Click 'Cancel workflow' in GitHub Actions"
+          echo ""
+          
+          # Fonction de monitoring des services
+          monitor_services() {
+            while true; do
+              if ! sudo systemctl is-active xrdp > /dev/null; then
+                echo "⚠️  XRDP stopped, restarting..."
+                sudo systemctl restart xrdp
+              fi
+              
+              if ! sudo tailscale status > /dev/null 2>&1; then
+                echo "⚠️  Tailscale disconnected, reconnecting..."
+                sudo tailscale up --reset
+              fi
+              sleep 30
+            done
+          }
+          
+          # Démarrer le monitoring en arrière-plan
+          monitor_services &
+          MONITOR_PID=$!
+          
+          # Main keep-alive loop avec heartbeat
+          COUNTER=0
+          while true; do
+            COUNTER=$((COUNTER + 1))
+            CURRENT_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+            echo "💓 [${CURRENT_TIME}] RDP Session Active - ${COUNTER} minutes elapsed"
+            
+            # Afficher l'état des services toutes les 5 minutes
+            if [ $((COUNTER % 5)) -eq 0 ]; then
+              echo "📊 Service Status:"
+              echo "   XRDP: $(sudo systemctl is-active xrdp)"
+              echo "   Tailscale: $(sudo tailscale status > /dev/null 2>&1 && echo 'connected' || echo 'disconnected')"
+              echo "   IP: $(sudo tailscale ip -4 2>/dev/null || echo 'unknown')"
+            fi
+            
+            sleep 60
+          done
+          
+          # Nettoyer le processus de monitoring si on sort de la boucle
+          kill $MONITOR_PID 2>/dev/null || true
