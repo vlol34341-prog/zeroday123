@@ -52,22 +52,6 @@ jobs:
           sudo apt-get autoremove -y
           sudo apt-get clean
 
-      - name: Optimize Desktop Performance
-        run: |
-          # Configurer XFCE pour de meilleures performances (méthode corrigée)
-          mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml
-          
-          # Créer le fichier de configuration XFWM4 avec --create
-          xfconf-query -c xfwm4 -p /general/use_compositing -s false --create -t bool
-          xfconf-query -c xfwm4 -p /general/theme -s "Default" --create -t string
-          
-          # Désactiver la sauvegarde de session
-          xfconf-query -c xfce4-session -p /general/SaveOnExit -s false --create -t bool
-          
-          # Configurer pour performances
-          xfconf-query -c xfwm4 -p /general/title_font -s "Sans 10" --create -t string
-          xfconf-query -c xfwm4 -p /general/title_alignment -s "center" --create -t string
-
       - name: Create RDP User
         run: |
           # Créer un utilisateur dédié pour RDP
@@ -80,13 +64,106 @@ jobs:
           sudo usermod -aG xrdp ubuntuuser
           
           # Configurer l'environnement pour l'utilisateur
-          sudo -u ubuntuuser mkdir -p /home/ubuntuuser/.config/xfce4
           sudo -u ubuntuuser bash -c "echo 'xfce4-session' > /home/ubuntuuser/.xsession"
           
-          # Appliquer les optimisations pour l'utilisateur
-          sudo -u ubuntuuser xfconf-query -c xfwm4 -p /general/use_compositing -s false --create -t bool
-          sudo -u ubuntuuser xfconf-query -c xfwm4 -p /general/theme -s "Default" --create -t string
+          # Créer les fichiers de configuration XFCE optimisés
+          sudo mkdir -p /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml
           
+          # Configuration XFWM4 pour désactiver les effets (méthode fichier)
+          sudo cat > /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfwm4" version="1.0">
+            <property name="general" type="empty">
+              <property name="activate_action" type="string" value="bring"/>
+              <property name="borderless_maximize" type="bool" value="true"/>
+              <property name="box_move" type="bool" value="true"/>
+              <property name="box_resize" type="bool" value="true"/>
+              <property name="button_layout" type="string" value="O|HMC"/>
+              <property name="button_offset" type="int" value="0"/>
+              <property name="button_spacing" type="int" value="0"/>
+              <property name="click_to_focus" type="bool" value="true"/>
+              <property name="cycle_apps_only" type="bool" value="false"/>
+              <property name="cycle_draw_frame" type="bool" value="true"/>
+              <property name="cycle_hidden" type="bool" value="true"/>
+              <property name="cycle_minimum" type="bool" value="true"/>
+              <property name="cycle_preview" type="bool" value="true"/>
+              <property name="cycle_tabwin_mode" type="int" value="0"/>
+              <property name="cycle_workspaces" type="bool" value="false"/>
+              <property name="double_click_action" type="string" value="maximize"/>
+              <property name="easy_click" type="string" value="Alt"/>
+              <property name="focus_delay" type="int" value="250"/>
+              <property name="focus_hint" type="bool" value="true"/>
+              <property name="focus_new" type="bool" value="true"/>
+              <property name="frame_border_top" type="int" value="0"/>
+              <property name="frame_opacity" type="int" value="100"/>
+              <property name="full_width_title" type="bool" value="true"/>
+              <property name="horiz_scroll_opacity" type="bool" value="false"/>
+              <property name="inactive_opacity" type="int" value="100"/>
+              <property name="maximized_offset" type="int" value="0"/>
+              <property name="mousewheel_rollup" type="bool" value="true"/>
+              <property name="move_opacity" type="int" value="100"/>
+              <property name="placement_ratio" type="int" value="20"/>
+              <property name="placement_mode" type="string" value="center"/>
+              <property name="popup_opacity" type="int" value="100"/>
+              <property name="raise_on_click" type="bool" value="true"/>
+              <property name="raise_on_focus" type="bool" value="false"/>
+              <property name="raise_with_any_button" type="bool" value="true"/>
+              <property name="repeat_urgent_blink" type="bool" value="false"/>
+              <property name="resize_opacity" type="int" value="100"/>
+              <property name="restore_on_move" type="bool" value="true"/>
+              <property name="scroll_workspaces" type="bool" value="true"/>
+              <property name="shadow_delta_height" type="int" value="0"/>
+              <property name="shadow_delta_width" type="int" value="0"/>
+              <property name="shadow_delta_x" type="int" value="0"/>
+              <property name="shadow_delta_y" type="int" value="-3"/>
+              <property name="shadow_opacity" type="int" value="50"/>
+              <property name="show_app_icon" type="bool" value="true"/>
+              <property name="show_dock_shadow" type="bool" value="true"/>
+              <property name="show_frame_shadow" type="bool" value="true"/>
+              <property name="show_popup_shadow" type="bool" value="false"/>
+              <property name="snap_to_border" type="bool" value="true"/>
+              <property name="snap_to_windows" type="bool" value="true"/>
+              <property name="snap_width" type="int" value="10"/>
+              <property name="theme" type="string" value="Default"/>
+              <property name="title_alignment" type="string" value="center"/>
+              <property name="title_font" type="string" value="Sans Bold 9"/>
+              <property name="title_horizontal_offset" type="int" value="0"/>
+              <property name="titleless_maximize" type="bool" value="false"/>
+              <property name="title_shadow_active" type="string" value="false"/>
+              <property name="title_shadow_inactive" type="string" value="false"/>
+              <property name="tooltip_timeout" type="int" value="500"/>
+              <property name="unredirect_overlays" type="bool" value="true"/>
+              <property name="use_compositing" type="bool" value="false"/>
+              <property name="vertical_sync" type="bool" value="false"/>
+              <property name="vblank_mode" type="string" value="auto"/>
+              <property name="wrap_cycle" type="bool" value="true"/>
+              <property name="wrap_layout" type="bool" value="true"/>
+              <property name="wrap_resistance" type="int" value="10"/>
+              <property name="wrap_windows" type="bool" value="true"/>
+              <property name="wrap_workspaces" type="bool" value="false"/>
+              <property name="zoom_desktop" type="bool" value="true"/>
+              <property name="workspace_count" type="int" value="4"/>
+              <property name="workspace_names" type="array">
+                <value type="string" value="Workspace 1"/>
+                <value type="string" value="Workspace 2"/>
+                <value type="string" value="Workspace 3"/>
+                <value type="string" value="Workspace 4"/>
+              </property>
+            </property>
+          </channel>
+          EOF
+
+          # Configuration pour désactiver les effets de session
+          sudo cat > /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-session" version="1.0">
+            <property name="general" type="empty">
+              <property name="SaveOnExit" type="bool" value="false"/>
+              <property name="LockScreen" type="bool" value="false"/>
+            </property>
+          </channel>
+          EOF
+
           sudo chown -R ubuntuuser:ubuntuuser /home/ubuntuuser
 
           # Stocker les identifiants
@@ -112,26 +189,47 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: Configure XRDP Security
+      - name: Configure XRDP Performance
         run: |
-          # Configurer XRDP pour accepter les connexions distantes
-          sudo sed -i 's/port=3389/port=3389\naddress=0.0.0.0/g' /etc/xrdp/xrdp.ini
-          
-          # Améliorer les performances XRDP
-          sudo sed -i 's/use_compression=yes/use_compression=no/g' /etc/xrdp/xrdp.ini
-          sudo sed -i 's/max_bpp=32/max_bpp=24/g' /etc/xrdp/xrdp.ini
-          sudo sed -i 's/bitmap_compression=true/bitmap_compression=false/g' /etc/xrdp/xrdp.ini
-          
+          # Configuration XRDP pour performances maximales
+          sudo tee /etc/xrdp/xrdp.ini > /dev/null << 'EOF'
+          [globals]
+          bitmap_cache=yes
+          bitmap_compression=no
+          port=3389
+          address=0.0.0.0
+          use_compression=no
+          crypt_level=low
+          channel_code=1
+          max_bpp=24
+          tcp_keepalive=yes
+          tcp_send_buffer_bytes=32768
+          tcp_recv_buffer_bytes=32768
+
+          [xrdp1]
+          name=sesman-X11rdp
+          lib=libxup.so
+          username=ask
+          password=ask
+          ip=127.0.0.1
+          port=-1
+          code=20
+          EOF
+
           # Redémarrer XRDP
           sudo systemctl restart xrdp
           sudo systemctl status xrdp
 
       - name: Additional Performance Tweaks
         run: |
-          # Désactiver les services inutiles pour libérer des ressources
+          # Désactiver les services inutiles
           sudo systemctl disable bluetooth --now || true
           sudo systemctl disable cups --now || true
           sudo systemctl disable avahi-daemon --now || true
+          
+          # Optimiser la mémoire
+          echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+          echo "vm.vfs_cache_pressure=50" | sudo tee -a /etc/sysctl.conf
 
       - name: Display Connection Information
         run: |
@@ -143,12 +241,12 @@ jobs:
           echo "Username: $RDP_USER"
           echo "Password: $RDP_PASSWORD"
           echo "================================================"
-          echo "DESKTOP: XFCE (Lightweight)"
+          echo "DESKTOP: XFCE (Ultra Lightweight)"
+          echo "PERFORMANCE: Compositing disabled"
           echo "RECOMMENDED CLIENT SETTINGS:"
           echo "- Resolution: 1280x720"
           echo "- Color: 24-bit"
           echo "- Experience: LAN (10 Mbps+)"
-          echo "- Disable wallpaper and animations"
           echo "================================================"
           echo ""
 
@@ -166,6 +264,6 @@ jobs:
           counter=0
           while true; do
             counter=$((counter + 1))
-            echo "$(date): Session active - $counter minutes elapsed"
+            echo "$(date): Ubuntu RDP active - $counter minutes"
             sleep 60
           done
