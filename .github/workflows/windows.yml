@@ -26,11 +26,22 @@ jobs:
 
           Restart-Service -Name TermService -Force
 
-      - name: Create RDP User
+      - name: Create RDP User with Secure Password
         run: |
-          # Generate secure password
-          Add-Type -AssemblyName System.Web
-          $password = [System.Web.Security.Membership]::GeneratePassword(16, 4)
+          # Generate secure password (méthode compatible GitHub runners)
+          $charSet = @{
+              Upper   = [char[]](65..90)      # A-Z
+              Lower   = [char[]](97..122)     # a-z
+              Number  = [char[]](48..57)      # 0-9
+              Special = ([char[]](33..47) + [char[]](58..64) +
+                         [char[]](91..96) + [char[]](123..126)) # Special characters
+          }
+          $rawPassword = @()
+          $rawPassword += $charSet.Upper | Get-Random -Count 4
+          $rawPassword += $charSet.Lower | Get-Random -Count 4
+          $rawPassword += $charSet.Number | Get-Random -Count 4
+          $rawPassword += $charSet.Special | Get-Random -Count 4
+          $password = -join ($rawPassword | Sort-Object { Get-Random })
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           
           # Create user
@@ -41,6 +52,11 @@ jobs:
           # Store credentials
           echo "RDP_USER=RDPUser" >> $env:GITHUB_ENV
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
+          
+          if (-not (Get-LocalUser -Name "RDPUser")) {
+              Write-Error "User creation failed"
+              exit 1
+          }
 
       - name: Install and Configure Tailscale
         run: |
@@ -91,6 +107,7 @@ jobs:
           Write-Host "Password: $env:RDP_PASSWORD"
           Write-Host "================================================"
           Write-Host "Connect via Tailscale network from your PC"
+          Write-Host "Use Microsoft Remote Desktop or similar RDP client"
           Write-Host "================================================"
           Write-Host "`n"
 
@@ -103,7 +120,7 @@ jobs:
           if ($testResult.TcpTestSucceeded) {
               Write-Host "✅ RDP port 3389 is accessible via Tailscale"
           } else {
-              Write-Host "❌ RDP port 3389 is not accessible"
+              Write-Host "⚠️ RDP port test failed, but this might be normal. Trying anyway..."
           }
           
           # Keep the runner alive
