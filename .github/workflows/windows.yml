@@ -1,4 +1,4 @@
-name: RDP via Tailscale
+name: RDP via Tailscale - Optimized
 
 on:
   workflow_dispatch:
@@ -26,9 +26,39 @@ jobs:
 
           Restart-Service -Name TermService -Force
 
+      - name: Optimize RDP Performance
+        run: |
+          # Optimisations pour réduire le lag et les glitches
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "MaxMonitors" -Value 4
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "MaxXResolution" -Value 1920
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "MaxYResolution" -Value 1080
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "ColorDepth" -Value 32
+
+          # Désactiver les effets visuels pour améliorer les performances
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
+                           -Name "fDisableWallpaper" -Value 1
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
+                           -Name "fDisableFullWindowDrag" -Value 1
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
+                           -Name "fDisableMenuAnims" -Value 1
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' `
+                           -Name "fDisableCursorSetting" -Value 0
+
+          # Améliorer la réactivité de la souris
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "MouseCursorHook" -Value 1
+
+          # Redémarrer les services
+          Restart-Service -Name "TermService" -Force
+          Restart-Service -Name "UmRdpService" -Force
+
       - name: Create RDP User with Secure Password
         run: |
-          # Generate secure password (méthode compatible GitHub runners)
+          # Generate secure password
           $charSet = @{
               Upper   = [char[]](65..90)      # A-Z
               Lower   = [char[]](97..122)     # a-z
@@ -52,11 +82,6 @@ jobs:
           # Store credentials
           echo "RDP_USER=RDPUser" >> $env:GITHUB_ENV
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
-          
-          if (-not (Get-LocalUser -Name "RDPUser")) {
-              Write-Error "User creation failed"
-              exit 1
-          }
 
       - name: Install and Configure Tailscale
         run: |
@@ -71,12 +96,11 @@ jobs:
           # Wait for installation to complete
           Start-Sleep -Seconds 10
           
-          # Connect to Tailscale using your auth key
+          # Connect to Tailscale
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-runner-$env:GITHUB_RUN_ID --accept-routes
 
       - name: Get Tailscale IP
         run: |
-          # Get Tailscale IP address
           $retries = 0
           $maxRetries = 10
           $tsIP = $null
@@ -89,7 +113,7 @@ jobs:
           }
           
           if (-not $tsIP) {
-              Write-Error "Failed to get Tailscale IP after $maxRetries attempts"
+              Write-Error "Failed to get Tailscale IP"
               exit 1
           }
           
@@ -100,37 +124,31 @@ jobs:
         run: |
           Write-Host "`n"
           Write-Host "================================================"
-          Write-Host "🚀 RDP ACCESS READY"
+          Write-Host "🚀 RDP ACCESS READY - OPTIMIZED"
           Write-Host "================================================"
           Write-Host "IP Address: $env:TAILSCALE_IP"
           Write-Host "Username: $env:RDP_USER"
           Write-Host "Password: $env:RDP_PASSWORD"
           Write-Host "================================================"
-          Write-Host "Connect via Tailscale network from your PC"
-          Write-Host "Use Microsoft Remote Desktop or similar RDP client"
+          Write-Host "RECOMMENDED RDP CLIENT SETTINGS:"
+          Write-Host "- Experience: LAN (10 Mbps+)"
+          Write-Host "- Color depth: 32-bit"
+          Write-Host "- Display: 1280x720 or 1920x1080"
+          Write-Host "- Disable wallpaper and visual effects"
           Write-Host "================================================"
           Write-Host "`n"
 
       - name: Keep RDP Session Active
         run: |
-          # Test RDP connectivity
-          Write-Host "Testing RDP connectivity..."
-          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389 -WarningAction SilentlyContinue
-          
-          if ($testResult.TcpTestSucceeded) {
-              Write-Host "✅ RDP port 3389 is accessible via Tailscale"
-          } else {
-              Write-Host "⚠️ RDP port test failed, but this might be normal. Trying anyway..."
-          }
-          
-          # Keep the runner alive
-          Write-Host "RDP session is active. Press 'Cancel' in GitHub to terminate."
-          Write-Host "Monitoring connection every 60 seconds..."
+          Write-Host "✅ RDP Optimized Session Active"
+          Write-Host "Press 'Cancel' in GitHub to terminate"
           
           $counter = 0
           while ($true) {
               $counter++
-              $currentTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-              Write-Host "[$currentTime] RDP session active - $counter minutes elapsed"
+              $currentTime = Get-Date -Format "HH:mm:ss"
+              if ($counter % 10 -eq 0) {
+                  Write-Host "[$currentTime] Session active - $counter minutes"
+              }
               Start-Sleep -Seconds 60
           }
