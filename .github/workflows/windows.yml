@@ -1,4 +1,4 @@
-name: Windows RDP Simple
+name: Windows RDP 
 
 on:
   workflow_dispatch:
@@ -22,10 +22,10 @@ jobs:
           # Redémarrer le service
           Restart-Service -Name TermService -Force
 
-      - name: Create User with Simple Password
+      - name: Create User with Valid Password
         run: |
-          # Créer l'utilisateur avec mot de passe simple
-          $securePass = ConvertTo-SecureString "Walid123@@" -AsPlainText -Force
+          # Créer l'utilisateur avec mot de passe valide pour Windows
+          $securePass = ConvertTo-SecureString "Walid123!" -AsPlainText -Force
           New-LocalUser -Name "Walid" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "Walid"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Walid"
@@ -70,13 +70,13 @@ jobs:
           Write-Host "================================================"
           Write-Host "IP: $env:TAILSCALE_IP"
           Write-Host "Utilisateur: Walid"
-          Write-Host "Mot de passe: Walid123@@"
+          Write-Host "Mot de passe: Walid123!"
           Write-Host ""
           Write-Host "📝 Instructions:"
           Write-Host "1. Ouvrez Remote Desktop Connection"
           Write-Host "2. Entrez l'IP Tailscale"
           Write-Host "3. Utilisateur: Walid"
-          Write-Host "4. Mot de passe: Walid123@@"
+          Write-Host "4. Mot de passe: Walid123!"
           Write-Host "================================================"
           Write-Host ""
 
