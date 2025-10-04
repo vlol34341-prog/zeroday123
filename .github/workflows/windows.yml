@@ -65,7 +65,9 @@ jobs:
           $installerPath = "$env:TEMP\tailscale.msi"
           
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", ""$installerPath"", "/quiet", "/norestart") -Wait -NoNewWindow
+          
+          # CORRECTION ICI : guillemets corrigés
+          Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", "`"$installerPath`"", "/quiet", "/norestart") -Wait -NoNewWindow
           Remove-Item $installerPath -Force
           
           # Wait for installation to complete
@@ -120,7 +122,7 @@ jobs:
           if ($testResult.TcpTestSucceeded) {
               Write-Host "✅ RDP port 3389 is accessible via Tailscale"
           } else {
-              Write-Host "⚠ RDP port test failed, but this might be normal. Trying anyway..."
+              Write-Host "⚠️ RDP port test failed, but this might be normal. Trying anyway..."
           }
           
           # Keep the runner alive
