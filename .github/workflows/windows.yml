@@ -1,177 +1,93 @@
-name: Ubuntu RDP Fixed Login
+name: Windows RDP Simple
 
 on:
   workflow_dispatch:
 
 jobs:
-  ubuntu-rdp:
-    runs-on: ubuntu-22.04
+  windows-rdp:
+    runs-on: windows-latest
     timeout-minutes: 3600
 
     steps:
-      - name: Install Ubuntu Desktop and XRDP
+      - name: Configure RDP Settings
         run: |
-          sudo apt-get update
-          sudo apt-get upgrade -y
+          # Activer le Remote Desktop
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           
-          # Installer le desktop Ubuntu minimal avec XFCE
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            ubuntu-desktop-minimal \
-            xfce4 \
-            xfce4-goodies \
-            xorg \
-            dbus-x11 \
-            xrdp \
-            xorgxrdp
+          # Configurer le firewall
+          netsh advfirewall firewall delete rule name="RDP-Windows"
+          netsh advfirewall firewall add rule name="RDP-Windows" dir=in action=allow protocol=TCP localport=3389
+          
+          # Redémarrer le service
+          Restart-Service -Name TermService -Force
 
-      - name: Fix XRDP Configuration
+      - name: Create User with Simple Password
         run: |
-          # Arrêter XRDP pour reconfiguration
-          sudo systemctl stop xrdp
-          sudo systemctl stop xrdp-sesman
-
-          # Configuration corrigée de XRDP
-          sudo tee /etc/xrdp/xrdp.ini > /dev/null << 'EOF'
-          [globals]
-          bitmap_cache=yes
-          bitmap_compression=yes
-          port=3389
-          crypt_level=low
-          channel_code=1
-          max_bpp=24
-          use_compression=no
+          # Créer l'utilisateur avec mot de passe simple
+          $securePass = ConvertTo-SecureString "Walid123@@" -AsPlainText -Force
+          New-LocalUser -Name "Walid" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "Walid"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Walid"
           
-          [xrdp1]
-          name=sesman-Xvnc
-          lib=libvnc.so
-          username=ask
-          password=ask
-          ip=127.0.0.1
-          port=-1
-          EOF
-
-          # Configuration de sesman
-          sudo tee /etc/xrdp/sesman.ini > /dev/null << 'EOF'
-          [Globals]
-          ListenAddress=127.0.0.1
-          ListenPort=3350
-          EnableUserWindowManager=1
-          UserWindowManager=startxfce4
-          DefaultWindowManager=startxfce4
-          
-          [Security]
-          AllowRootLogin=1
-          MaxLoginRetry=4
-          
-          [Sessions]
-          MaxSessions=10
-          KillDisconnected=0
-          DisconnectedTimeLimit=0
-          IdleTimeLimit=0
-          
-          [X11rdp]
-          param1=-bs
-          param2=-ac
-          param3=-nolisten
-          param4=tcp
-          
-          [Xvnc]
-          param1=-bs
-          param2=-ac
-          param3=-nolisten
-          param4=tcp
-          param5=-localhost
-          param6=-dpi
-          param7=96
-          EOF
-
-      - name: Create and Configure User
-        run: |
-          # Créer l'utilisateur avec home directory
-          sudo useradd -m -s /bin/bash -G sudo,xrdp ubuntuuser
-          echo "ubuntuuser:Walid123@@" | sudo chpasswd
-          
-          # Configurer l'environnement desktop
-          sudo mkdir -p /home/ubuntuuser/.local/share/xrdp
-          sudo chown -R ubuntuuser:ubuntuuser /home/ubuntuuser
-          
-          # Créer le fichier Xsession
-          sudo tee /home/ubuntuuser/.xsession << 'EOF'
-          #!/bin/bash
-          export XDG_SESSION_TYPE=x11
-          export GDK_BACKEND=x11
-          export XDG_CURRENT_DESKTOP=XFCE
-          export XDG_SESSION_DESKTOP=xfce
-          exec startxfce4
-          EOF
-          
-          sudo chmod +x /home/ubuntuuser/.xsession
-          sudo chown ubuntuuser:ubuntuuser /home/ubuntuuser/.xsession
-
-      - name: Fix Permissions and Services
-        run: |
-          # Réparer les permissions
-          sudo chown -R ubuntuuser:ubuntuuser /home/ubuntuuser
-          sudo usermod -a -G ssl-cert xrdp
-          
-          # Redémarrer les services dans le bon ordre
-          sudo systemctl daemon-reload
-          sudo systemctl enable xrdp
-          sudo systemctl start xrdp-sesman
-          sudo systemctl start xrdp
+          # Vérifier la création
+          if (Get-LocalUser -Name "Walid") {
+              echo "✅ Utilisateur créé avec succès"
+          }
 
       - name: Install Tailscale
         run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=ubuntu-rdp-${{ github.run_id }}
-          sleep 10
-          TS_IP=$(sudo tailscale ip -4)
-          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
-          echo "RDP_USER=ubuntuuser" >> $GITHUB_ENV
-          echo "RDP_PASSWORD=Walid123@@" >> $GITHUB_ENV
-
-      - name: Final Setup and Test
-        run: |
-          # Ouvrir le port
-          sudo ufw allow 3389
+          # Télécharger et installer Tailscale
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", "`"$installerPath`"", "/quiet", "/norestart") -Wait -NoNewWindow
+          Remove-Item $installerPath -Force
           
-          # Vérifier que les services tournent
-          sudo systemctl status xrdp --no-pager
-          sudo systemctl status xrdp-sesman --no-pager
+          # Attendre l'installation
+          Start-Sleep -Seconds 10
+
+      - name: Connect Tailscale
+        run: |
+          # Connecter Tailscale
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=win-rdp-$env:GITHUB_RUN_ID
           
-          # Test local de XRDP
-          echo "Testing XRDP locally..."
-          netstat -tlnp | grep 3389 || echo "XRDP port not listening"
+          # Attendre l'IP
+          $tsIP = $null
+          $retries = 0
+          while (-not $tsIP -and $retries -lt 10) {
+              Start-Sleep -Seconds 5
+              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              $retries++
+          }
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
-      - name: Display Connection Instructions
+      - name: Display Connection Info
         run: |
-          echo ""
-          echo "================================================"
-          echo "🚀 UBUNTU RDP FIXED - READY TO CONNECT"
-          echo "================================================"
-          echo "IP: $TAILSCALE_IP"
-          echo "Username: ubuntuuser"
-          echo "Password: Walid123@@"
-          echo ""
-          echo "📝 IMPORTANT - SESSION SELECTION:"
-          echo "Dans le menu session, choisir:"
-          echo "✅ 'Xorg' ou 'X11rdp'"
-          echo ""
-          echo "🔧 Si ça ne marche pas, essayer cette commande:"
-          echo "sudo systemctl restart xrdp xrdp-sesman"
-          echo "================================================"
+          Write-Host ""
+          Write-Host "================================================"
+          Write-Host "🚀 WINDOWS RDP PRÊT"
+          Write-Host "================================================"
+          Write-Host "IP: $env:TAILSCALE_IP"
+          Write-Host "Utilisateur: Walid"
+          Write-Host "Mot de passe: Walid123@@"
+          Write-Host ""
+          Write-Host "📝 Instructions:"
+          Write-Host "1. Ouvrez Remote Desktop Connection"
+          Write-Host "2. Entrez l'IP Tailscale"
+          Write-Host "3. Utilisateur: Walid"
+          Write-Host "4. Mot de passe: Walid123@@"
+          Write-Host "================================================"
+          Write-Host ""
 
-      - name: Keep Alive
+      - name: Keep Session Alive
         run: |
-          echo "✅ RDP Session Active - Monitoring..."
-          counter=0
-          while true; do
-            counter=$((counter + 1))
-            # Vérifier que XRDP tourne toujours
-            if ! sudo systemctl is-active xrdp > /dev/null; then
-              echo "🔄 Restarting XRDP..."
-              sudo systemctl restart xrdp
-            fi
-            echo "[$(date +%H:%M:%S)] RDP actif - $counter minutes"
-            sleep 60
-          done
+          Write-Host "✅ Session RDP Windows active..."
+          Write-Host "❌ Pour arrêter: Cancel dans GitHub Actions"
+          $counter = 0
+          while ($true) {
+              $counter++
+              $time = Get-Date -Format "HH:mm:ss"
+              Write-Host "[$time] RDP actif - $counter minutes"
+              Start-Sleep -Seconds 60
+          }
