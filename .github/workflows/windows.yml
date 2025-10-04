@@ -52,12 +52,11 @@ jobs:
           sudo apt-get autoremove -y
           sudo apt-get clean
 
-      - name: Create RDP User
+      - name: Create RDP User with Simple Password
         run: |
-          # Créer un utilisateur dédié pour RDP
+          # Créer un utilisateur dédié pour RDP avec mot de passe simple
           sudo useradd -m -s /bin/bash ubuntuuser
-          PASSWORD=$(openssl rand -base64 16 | tr -d '/+' | cut -c1-16)
-          echo "ubuntuuser:$PASSWORD" | sudo chpasswd
+          echo "ubuntuuser:Walid123@@" | sudo chpasswd
           
           # Ajouter aux groupes nécessaires
           sudo usermod -aG sudo ubuntuuser
@@ -97,7 +96,7 @@ jobs:
 
           # Stocker les identifiants
           echo "RDP_USER=ubuntuuser" >> $GITHUB_ENV
-          echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+          echo "RDP_PASSWORD=Walid123@@" >> $GITHUB_ENV
 
       - name: Install and Configure Tailscale
         run: |
@@ -147,23 +146,18 @@ jobs:
           sudo systemctl disable bluetooth --now || true
           sudo systemctl disable cups --now || true
           sudo systemctl disable avahi-daemon --now || true
-          
-          # Optimiser la mémoire
-          echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
-          echo "vm.vfs_cache_pressure=50" | sudo tee -a /etc/sysctl.conf
 
       - name: Display Connection Information
         run: |
           echo ""
           echo "================================================"
-          echo "🚀 UBUNTU RDP ACCESS READY - OPTIMIZED"
+          echo "🚀 UBUNTU RDP ACCESS READY"
           echo "================================================"
           echo "IP Address: $TAILSCALE_IP"
           echo "Username: $RDP_USER"
-          echo "Password: $RDP_PASSWORD"
+          echo "Password: Walid123@@"
           echo "================================================"
-          echo "DESKTOP: XFCE (Ultra Lightweight)"
-          echo "PERFORMANCE: Compositing disabled"
+          echo "DESKTOP: XFCE (Lightweight)"
           echo "RECOMMENDED CLIENT SETTINGS:"
           echo "- Resolution: 1280x720"
           echo "- Color: 24-bit"
@@ -171,60 +165,23 @@ jobs:
           echo "================================================"
           echo ""
 
-      - name: Keep Session Active (Guaranteed)
+      - name: Keep Session Active
         run: |
-          echo "🔵 Starting RDP keep-alive session..."
-          echo "✅ All services are running"
+          echo "✅ Starting RDP session..."
           echo "🖥️  RDP accessible at: $TAILSCALE_IP"
-          echo "👤 Username: $RDP_USER"
-          echo "🔑 Password: $RDP_PASSWORD"
-          echo ""
-          echo "📡 Services status:"
-          sudo systemctl is-active xrdp && echo "✅ XRDP: ACTIVE" || echo "❌ XRDP: INACTIVE"
-          sudo tailscale status && echo "✅ Tailscale: ACTIVE" || echo "❌ Tailscale: INACTIVE"
+          echo "👤 Username: ubuntuuser"
+          echo "🔑 Password: Walid123@@"
           echo ""
           echo "⏰ Session started at: $(date)"
           echo "🔄 This session will remain active until manually cancelled"
           echo "❌ To stop: Click 'Cancel workflow' in GitHub Actions"
           echo ""
           
-          # Fonction de monitoring des services
-          monitor_services() {
-            while true; do
-              if ! sudo systemctl is-active xrdp > /dev/null; then
-                echo "⚠️  XRDP stopped, restarting..."
-                sudo systemctl restart xrdp
-              fi
-              
-              if ! sudo tailscale status > /dev/null 2>&1; then
-                echo "⚠️  Tailscale disconnected, reconnecting..."
-                sudo tailscale up --reset
-              fi
-              sleep 30
-            done
-          }
-          
-          # Démarrer le monitoring en arrière-plan
-          monitor_services &
-          MONITOR_PID=$!
-          
-          # Main keep-alive loop avec heartbeat
+          # Main keep-alive loop
           COUNTER=0
           while true; do
             COUNTER=$((COUNTER + 1))
-            CURRENT_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-            echo "💓 [${CURRENT_TIME}] RDP Session Active - ${COUNTER} minutes elapsed"
-            
-            # Afficher l'état des services toutes les 5 minutes
-            if [ $((COUNTER % 5)) -eq 0 ]; then
-              echo "📊 Service Status:"
-              echo "   XRDP: $(sudo systemctl is-active xrdp)"
-              echo "   Tailscale: $(sudo tailscale status > /dev/null 2>&1 && echo 'connected' || echo 'disconnected')"
-              echo "   IP: $(sudo tailscale ip -4 2>/dev/null || echo 'unknown')"
-            fi
-            
+            CURRENT_TIME=$(date '+%H:%M:%S')
+            echo "[${CURRENT_TIME}] RDP Session Active - ${COUNTER} minutes"
             sleep 60
           done
-          
-          # Nettoyer le processus de monitoring si on sort de la boucle
-          kill $MONITOR_PID 2>/dev/null || true
