@@ -1,4 +1,4 @@
-name: Ubuntu RDP via Tailscale
+name: Ubuntu RDP Fixed Login
 
 on:
   workflow_dispatch:
@@ -9,179 +9,169 @@ jobs:
     timeout-minutes: 3600
 
     steps:
-      - name: Install XFCE and XRDP
+      - name: Install Ubuntu Desktop and XRDP
         run: |
-          # Mettre à jour le système
           sudo apt-get update
           sudo apt-get upgrade -y
+          
+          # Installer le desktop Ubuntu minimal avec XFCE
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            ubuntu-desktop-minimal \
+            xfce4 \
+            xfce4-goodies \
+            xorg \
+            dbus-x11 \
+            xrdp \
+            xorgxrdp
 
-          # Installer XFCE (léger et performant)
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4 xfce4-goodies xorg dbus-x11
-
-          # Installer XRDP
-          sudo apt-get install -y xrdp
-
-          # Configurer XRDP pour utiliser XFCE
-          echo "xfce4-session" > ~/.xsession
-          sudo cp ~/.xsession /etc/skel/
-
-          # Redémarrer XRDP
-          sudo systemctl enable xrdp
-          sudo systemctl restart xrdp
-
-          # Ouvrir le port RDP
-          sudo ufw allow 3389
-
-      - name: Install Essential Tools
+      - name: Fix XRDP Configuration
         run: |
-          # Outils essentiels
-          sudo apt-get install -y \
-            firefox \
-            filezilla \
-            gedit \
-            vim \
-            htop \
-            curl \
-            wget \
-            git \
-            nano \
-            fonts-noto \
-            fonts-liberation
+          # Arrêter XRDP pour reconfiguration
+          sudo systemctl stop xrdp
+          sudo systemctl stop xrdp-sesman
 
-          # Nettoyer le cache
-          sudo apt-get autoremove -y
-          sudo apt-get clean
+          # Configuration corrigée de XRDP
+          sudo tee /etc/xrdp/xrdp.ini > /dev/null << 'EOF'
+          [globals]
+          bitmap_cache=yes
+          bitmap_compression=yes
+          port=3389
+          crypt_level=low
+          channel_code=1
+          max_bpp=24
+          use_compression=no
+          
+          [xrdp1]
+          name=sesman-Xvnc
+          lib=libvnc.so
+          username=ask
+          password=ask
+          ip=127.0.0.1
+          port=-1
+          EOF
 
-      - name: Create RDP User with Simple Password
+          # Configuration de sesman
+          sudo tee /etc/xrdp/sesman.ini > /dev/null << 'EOF'
+          [Globals]
+          ListenAddress=127.0.0.1
+          ListenPort=3350
+          EnableUserWindowManager=1
+          UserWindowManager=startxfce4
+          DefaultWindowManager=startxfce4
+          
+          [Security]
+          AllowRootLogin=1
+          MaxLoginRetry=4
+          
+          [Sessions]
+          MaxSessions=10
+          KillDisconnected=0
+          DisconnectedTimeLimit=0
+          IdleTimeLimit=0
+          
+          [X11rdp]
+          param1=-bs
+          param2=-ac
+          param3=-nolisten
+          param4=tcp
+          
+          [Xvnc]
+          param1=-bs
+          param2=-ac
+          param3=-nolisten
+          param4=tcp
+          param5=-localhost
+          param6=-dpi
+          param7=96
+          EOF
+
+      - name: Create and Configure User
         run: |
-          # Créer un utilisateur dédié pour RDP avec mot de passe simple
-          sudo useradd -m -s /bin/bash ubuntuuser
+          # Créer l'utilisateur avec home directory
+          sudo useradd -m -s /bin/bash -G sudo,xrdp ubuntuuser
           echo "ubuntuuser:Walid123@@" | sudo chpasswd
           
-          # Ajouter aux groupes nécessaires
-          sudo usermod -aG sudo ubuntuuser
-          sudo usermod -aG xrdp ubuntuuser
-          
-          # Configurer l'environnement pour l'utilisateur
-          sudo -u ubuntuuser bash -c "echo 'xfce4-session' > /home/ubuntuuser/.xsession"
-          
-          # Créer les fichiers de configuration XFCE optimisés
-          sudo mkdir -p /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml
-          
-          # Configuration XFWM4 pour désactiver les effets
-          sudo cat > /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xfwm4" version="1.0">
-            <property name="general" type="empty">
-              <property name="theme" type="string" value="Default"/>
-              <property name="use_compositing" type="bool" value="false"/>
-              <property name="title_alignment" type="string" value="center"/>
-              <property name="snap_to_border" type="bool" value="true"/>
-              <property name="snap_to_windows" type="bool" value="true"/>
-            </property>
-          </channel>
-          EOF
-
-          # Configuration pour désactiver les effets de session
-          sudo cat > /home/ubuntuuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xfce4-session" version="1.0">
-            <property name="general" type="empty">
-              <property name="SaveOnExit" type="bool" value="false"/>
-            </property>
-          </channel>
-          EOF
-
+          # Configurer l'environnement desktop
+          sudo mkdir -p /home/ubuntuuser/.local/share/xrdp
           sudo chown -R ubuntuuser:ubuntuuser /home/ubuntuuser
+          
+          # Créer le fichier Xsession
+          sudo tee /home/ubuntuuser/.xsession << 'EOF'
+          #!/bin/bash
+          export XDG_SESSION_TYPE=x11
+          export GDK_BACKEND=x11
+          export XDG_CURRENT_DESKTOP=XFCE
+          export XDG_SESSION_DESKTOP=xfce
+          exec startxfce4
+          EOF
+          
+          sudo chmod +x /home/ubuntuuser/.xsession
+          sudo chown ubuntuuser:ubuntuuser /home/ubuntuuser/.xsession
 
-          # Stocker les identifiants
+      - name: Fix Permissions and Services
+        run: |
+          # Réparer les permissions
+          sudo chown -R ubuntuuser:ubuntuuser /home/ubuntuuser
+          sudo usermod -a -G ssl-cert xrdp
+          
+          # Redémarrer les services dans le bon ordre
+          sudo systemctl daemon-reload
+          sudo systemctl enable xrdp
+          sudo systemctl start xrdp-sesman
+          sudo systemctl start xrdp
+
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=ubuntu-rdp-${{ github.run_id }}
+          sleep 10
+          TS_IP=$(sudo tailscale ip -4)
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "RDP_USER=ubuntuuser" >> $GITHUB_ENV
           echo "RDP_PASSWORD=Walid123@@" >> $GITHUB_ENV
 
-      - name: Install and Configure Tailscale
+      - name: Final Setup and Test
         run: |
-          # Installer Tailscale
-          curl -fsSL https://tailscale.com/install.sh | sh
-
-          # Démarrer Tailscale
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=ubuntu-gh-runner-${{ github.run_id }} --accept-routes
-
-          # Attendre l'IP Tailscale
-          sleep 15
-          TS_IP=$(sudo tailscale ip -4)
-          if [ -z "$TS_IP" ]; then
-            echo "Waiting for Tailscale IP..."
-            sleep 10
-            TS_IP=$(sudo tailscale ip -4)
-          fi
-          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
-          echo "Tailscale IP: $TS_IP"
-
-      - name: Configure XRDP Performance
-        run: |
-          # Sauvegarder la configuration originale
-          sudo cp /etc/xrdp/xrdp.ini /etc/xrdp/xrdp.ini.backup
-
-          # Modifier les paramètres de performance (méthode sûre avec sed)
-          sudo sed -i 's/use_compression=yes/use_compression=no/g' /etc/xrdp/xrdp.ini
-          sudo sed -i 's/max_bpp=32/max_bpp=24/g' /etc/xrdp/xrdp.ini
-          sudo sed -i 's/bitmap_compression=true/bitmap_compression=false/g' /etc/xrdp/xrdp.ini
+          # Ouvrir le port
+          sudo ufw allow 3389
           
-          # Ajouter l'adresse d'écoute si pas présente
-          if ! sudo grep -q "address=0.0.0.0" /etc/xrdp/xrdp.ini; then
-            echo "address=0.0.0.0" | sudo tee -a /etc/xrdp/xrdp.ini
-          fi
-
-          # Redémarrer XRDP
-          sudo systemctl daemon-reload
-          sudo systemctl restart xrdp
-          
-          # Vérifier le statut
-          echo "XRDP status:"
+          # Vérifier que les services tournent
           sudo systemctl status xrdp --no-pager
-
-      - name: Additional Performance Tweaks
-        run: |
-          # Désactiver les services inutiles
-          sudo systemctl disable bluetooth --now || true
-          sudo systemctl disable cups --now || true
-          sudo systemctl disable avahi-daemon --now || true
-
-      - name: Display Connection Information
-        run: |
-          echo ""
-          echo "================================================"
-          echo "🚀 UBUNTU RDP ACCESS READY"
-          echo "================================================"
-          echo "IP Address: $TAILSCALE_IP"
-          echo "Username: $RDP_USER"
-          echo "Password: Walid123@@"
-          echo "================================================"
-          echo "DESKTOP: XFCE (Lightweight)"
-          echo "RECOMMENDED CLIENT SETTINGS:"
-          echo "- Resolution: 1280x720"
-          echo "- Color: 24-bit"
-          echo "- Experience: LAN (10 Mbps+)"
-          echo "================================================"
-          echo ""
-
-      - name: Keep Session Active
-        run: |
-          echo "✅ Starting RDP session..."
-          echo "🖥️  RDP accessible at: $TAILSCALE_IP"
-          echo "👤 Username: ubuntuuser"
-          echo "🔑 Password: Walid123@@"
-          echo ""
-          echo "⏰ Session started at: $(date)"
-          echo "🔄 This session will remain active until manually cancelled"
-          echo "❌ To stop: Click 'Cancel workflow' in GitHub Actions"
-          echo ""
+          sudo systemctl status xrdp-sesman --no-pager
           
-          # Main keep-alive loop
-          COUNTER=0
+          # Test local de XRDP
+          echo "Testing XRDP locally..."
+          netstat -tlnp | grep 3389 || echo "XRDP port not listening"
+
+      - name: Display Connection Instructions
+        run: |
+          echo ""
+          echo "================================================"
+          echo "🚀 UBUNTU RDP FIXED - READY TO CONNECT"
+          echo "================================================"
+          echo "IP: $TAILSCALE_IP"
+          echo "Username: ubuntuuser"
+          echo "Password: Walid123@@"
+          echo ""
+          echo "📝 IMPORTANT - SESSION SELECTION:"
+          echo "Dans le menu session, choisir:"
+          echo "✅ 'Xorg' ou 'X11rdp'"
+          echo ""
+          echo "🔧 Si ça ne marche pas, essayer cette commande:"
+          echo "sudo systemctl restart xrdp xrdp-sesman"
+          echo "================================================"
+
+      - name: Keep Alive
+        run: |
+          echo "✅ RDP Session Active - Monitoring..."
+          counter=0
           while true; do
-            COUNTER=$((COUNTER + 1))
-            CURRENT_TIME=$(date '+%H:%M:%S')
-            echo "[${CURRENT_TIME}] RDP Session Active - ${COUNTER} minutes"
+            counter=$((counter + 1))
+            # Vérifier que XRDP tourne toujours
+            if ! sudo systemctl is-active xrdp > /dev/null; then
+              echo "🔄 Restarting XRDP..."
+              sudo systemctl restart xrdp
+            fi
+            echo "[$(date +%H:%M:%S)] RDP actif - $counter minutes"
             sleep 60
           done
